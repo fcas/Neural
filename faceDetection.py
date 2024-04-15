@@ -1,6 +1,10 @@
 from Kinho import Neural
 from PIL import Image
 import numpy as np
+import random
+
+RESIZED_WIDTH = 30
+RESIZED_WEIGHT = 30
 
 def isInsideOnEllipse(ellipse, x, y):
     major_axis_radius = ellipse['major_axis_radius']
@@ -76,12 +80,9 @@ def maskImages(info):
                 
                 color = 255 if isInside else 0
                 img_copy.putpixel((int(x), int(y)), color)
-                        
-        width //= 4
-        height //= 4
         
-        img = img.resize((width, height))
-        img_copy = img.resize((width, height))
+        img = img.resize((RESIZED_WIDTH, RESIZED_WEIGHT))
+        img_copy = img.resize((RESIZED_WIDTH, RESIZED_WEIGHT))
 
         gray_img = img.convert('L')
         gray_img_copy = img_copy.convert('L')
@@ -90,13 +91,13 @@ def maskImages(info):
         img_mask = []
         label_mask = []
         
-        MAX_PIXELS = max(MAX_PIXELS, width * height)
+        MAX_PIXELS = max(MAX_PIXELS, RESIZED_WIDTH * RESIZED_WEIGHT)
         
-        for x in range(width):
-            for y in range(height):
+        for x in range(RESIZED_WIDTH):
+            for y in range(RESIZED_WEIGHT):
                 img_mask.append(float(pixels[x, y] / 255))
                 
-                isInside = pixels_copy[x, y] != 0
+                isInside = pixels_copy[x, y] < 190
                 
                 label_mask.append(1.0 if isInside else 0.0)
         
@@ -104,16 +105,51 @@ def maskImages(info):
             'img': img_mask,
             'label': label_mask
         }
-        print("{}/{} - {}".format(i, tot, MAX_PIXELS))
+        
+        if i%100 == 0:
+            print("{}/{} - {}".format(i//100, tot//100, MAX_PIXELS))
         i += 1
+    
+    return info
 
 def main():
     dataset = buildDataset()
-    print("dataset size: {}".format(len(dataset)))
-    train = maskImages(dataset[:-100])
+    train = maskImages(dataset[:100])
     test = maskImages(dataset[-100:])
     
     print("MAXPIXELS = {}".format(MAX_PIXELS))
+    
+    bot = Neural(
+        sizes=[RESIZED_WEIGHT * RESIZED_WIDTH, 50, 50, RESIZED_WIDTH * RESIZED_WEIGHT],
+        eta=0.1,
+        gpu=True,
+        mini_batch_size=32,
+        multilabel=True
+    )
+    
+    PERIOD = 200
+    
+    for i in range(100):
+        score = 0
+        min_cost = 100
+        avg_cost = 0
+        for img in test:
+            c = bot.cost(img['mask']['img'], img['mask']['label'])
+            if c < 0.1:
+                score += 1
+            min_cost = min(min_cost, c)
+            avg_cost += c
+        
+        print("EPOCH = {}\nSCORE = {}\nMin_COST = {}\nAvg_COST = {}".format(
+            i,score/len(test), min_cost, avg_cost/len(test)
+        ))
+        
+        j = 1
+        for img in train:
+            bot.learn(img['mask']['img'], img['mask']['label'])
+            if j%PERIOD == 0:
+                print("{}/{}".format(j//PERIOD, len(train)//PERIOD))
+            j += 1
 
 if __name__ == "__main__":
     main()
