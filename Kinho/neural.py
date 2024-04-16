@@ -3,7 +3,8 @@ import math
 from .transfer import loadTo
 from .brain import Wrapper, Builder
 from .lib import *
-from numba import cuda
+from numba import cuda, NumbaPerformanceWarning
+import warnings
 
 EPS = 1e-8
 
@@ -11,6 +12,7 @@ def ceil(A, B):
     return (A + B - 1) // B
 
 class Neural(object):
+    warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
     def __init__(self, sizes=None, brain_path=None, eta=0.01, gpu=False, mini_batch_size=1, multilabel=False):
         if not sizes and not brain_path:
@@ -177,7 +179,7 @@ class Neural(object):
 
         for layer in self._layer:
             if layer.type() == 'neurons':
-                layers.append((layer.weight(), layer.biase()))
+                layers.append((layer.weight(), layer.bias()))
         
         wrapper = Wrapper(layers)
 
