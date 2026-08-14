@@ -1,22 +1,25 @@
 from numba.cuda.cudadrv.devicearray import DeviceNDArray
 from .utils import grid_config, ceil
 from numba import cuda
-import math
 
-THREADSPERBLOCK = (8, 128)
+THREADSPERBLOCK = (32, 32)
 
 @cuda.jit
 def perform(buffer: DeviceNDArray, const_z: DeviceNDArray):
-    batch_id, y_col = cuda.grid(2)
+    batch_id, x = cuda.grid(2)
     
-    if batch_id >= buffer.shape[0] or \
-        y_col >= const_z.shape[2]:
-            return None
-    
-    buffer[batch_id, 0, y_col] = (1.0 / (1.0 + math.exp(-const_z[batch_id, 0, y_col])))
+    if batch_id >= buffer.shape[0] or x >= const_z.shape[2]:
+        return None
 
-def sigmoid_0_1(buffer: DeviceNDArray, signals: DeviceNDArray):
-    """sigmoid with media: 0, std-dvt: 1
+    ALPHA = 0.01
+    r = const_z[batch_id][0][x]
+    if r < 0.0:
+        r = r * ALPHA
+
+    buffer[batch_id, 0, x] = r
+
+def relu(buffer: DeviceNDArray, signals: DeviceNDArray):
+    """ leaky relu
 
     Args:
         signals (DeviceNDArray): [batch][1][N]

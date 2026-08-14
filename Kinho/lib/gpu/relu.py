@@ -1,8 +1,8 @@
 from numba.cuda.cudadrv.devicearray import DeviceNDArray
-from .kernel import sigmoid_0_1
+from .kernel import relu as kernel_relu
 
-def sigmoid2(signals: DeviceNDArray, buffer: DeviceNDArray) -> DeviceNDArray:
-    """evaluates the sigmoid in (0, 1)
+def relu(signals: DeviceNDArray, buffer: DeviceNDArray) -> DeviceNDArray:
+    """evaluates the leaky relu
 
     Args:
         signals (DeviceNDArray): [batch][1][N]
@@ -11,6 +11,6 @@ def sigmoid2(signals: DeviceNDArray, buffer: DeviceNDArray) -> DeviceNDArray:
     Returns:
         (DeviceNDArray): [batch][1][N]
     """
-    sigmoid_0_1(buffer=buffer, signals=signals)
+    kernel_relu(buffer=buffer, signals=signals)
     
     return buffer

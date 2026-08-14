@@ -3,7 +3,8 @@ import math
 from .transfer import loadTo
 from .brain import Wrapper, Builder
 from .lib import *
-from numba import cuda
+from numba import cuda, NumbaPerformanceWarning
+import warnings
 
 EPS = 1e-8
 
@@ -11,8 +12,9 @@ def ceil(A, B):
     return (A + B - 1) // B
 
 class Neural(object):
+    warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
 
-    def __init__(self, sizes=None, brain_path=None, eta=0.01, gpu=False, mini_batch_size=1):
+    def __init__(self, sizes=None, brain_path=None, eta=0.01, gpu=False, mini_batch_size=1, multilabel=False):
         if not sizes and not brain_path:
             raise TypeError('Should set `sizes` or `brain_path` params')
 
@@ -22,6 +24,7 @@ class Neural(object):
         self.__mini_batch = mini_batch_size
         self.__fill = 0
         self.__tmp = {}
+        self._multilabel = multilabel
         
         if 2**int(math.log2(self.__mini_batch)) != self.__mini_batch:
             raise TypeError("Mini-batch size is invalid. You can use {}".format(2**int(math.log2(max(1, self.__mini_batch)))))
@@ -39,21 +42,21 @@ class Neural(object):
                                     biases=self._genRandomBiases(sizes))
 
     def _genRandomWeights(self, arch):
+        # He initialization
         return [
-            np.random.uniform(-2,2,x*y).reshape((x, y)) 
-            for x,y in zip(arch[:-1], arch[1:])
+            np.random.normal(0, np.sqrt(2 / x), size=(x, y)) 
+            for x, y in zip(arch[:-1], arch[1:])
         ]
-    
+
     def _genRandomBiases(self, arch):
         return [
-            np.random.uniform(0, -1, x).reshape((1,x)) 
-            for x in arch[1:]
+            np.zeros((1, x)) for x in arch[1:]
         ]
 
     def _buildArchitecture(self, architecture, weights, biases):
         for i in range(0, len(architecture) - 1):
             self._layer.append(
-                Sigmoid2(
+                ReLU(
                     (self.__mini_batch, 1, architecture[i]),
                     (self.__mini_batch, 1, architecture[i]),
                     gpuMode=self.__gpuMode
@@ -69,29 +72,36 @@ class Neural(object):
                     gpuMode=self.__gpuMode
                 )
             )
-        
-        self._layer.append(
-            Sigmoid2(
-                (self.__mini_batch, 1, architecture[-1]),
-                (self.__mini_batch, 1, architecture[-1]),
-                gpuMode=self.__gpuMode
+
+        if self._multilabel or architecture[-1] == 1:
+            self._layer.append(
+                Sigmoid2(
+                    (self.__mini_batch, 1, architecture[-1]),
+                    (self.__mini_batch, 1, architecture[-1]),
+                    gpuMode=self.__gpuMode
+                )
             )
-        )
-        
-        self._layer.append(
-            Softmax(
-                (self.__mini_batch, 1, architecture[-1]),
-                (self.__mini_batch, 1, architecture[-1]),
-                gpuMode=self.__gpuMode
+            self._layer.append(
+                BCE(
+                    (self.__mini_batch, 1, architecture[-1]),
+                    gpuMode=self.__gpuMode 
+                )
             )
-        )
-        
-        self._layer.append(
-            MSE(
-               (self.__mini_batch, 1, architecture[-1]),
-               gpuMode=self.__gpuMode 
+        else:
+            self._layer.append(
+                Softmax(
+                    (self.__mini_batch, 1, architecture[-1]),
+                    (self.__mini_batch, 1, architecture[-1]),
+                    gpuMode=self.__gpuMode
+                )
             )
-        )
+            # TODO: Change MSE to Cross-entropy
+            self._layer.append(
+                MSE(
+                    (self.__mini_batch, 1, architecture[-1]),
+                    gpuMode=self.__gpuMode 
+                )
+            )
 
     def __feedForward(self, x):
         for i in range(len(self._layer) - 1):
@@ -175,7 +185,7 @@ class Neural(object):
 
         for layer in self._layer:
             if layer.type() == 'neurons':
-                layers.append((layer.weight(), layer.biase()))
+                layers.append((layer.weight(), layer.bias()))
         
         wrapper = Wrapper(layers)
 
